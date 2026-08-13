@@ -1,0 +1,51 @@
+name: Build QModem for Linksys EA7500 v2 (OpenWrt 25.12)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential clang flex bison gawk gcc-multilib g++-multilib \
+          gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev apk-tools
+
+      - name: Download OpenWrt 25.12 SDK (ramips/mt7621)
+        run: |
+          # Mengunduh SDK OpenWrt 25.12
+          wget -q https://downloads.openwrt.org/releases/25.12.0/targets/ramips/mt7621/openwrt-sdk-25.12.0-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.xz || \
+          wget -q https://downloads.openwrt.org/releases/25.12.1/targets/ramips/mt7621/openwrt-sdk-25.12.1-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.xz
+          tar -xvf openwrt-sdk-*.tar.xz
+          rm openwrt-sdk-*.tar.xz
+          mv openwrt-sdk-* sdk
+
+      - name: Clone QModem Package & Update Feeds
+        run: |
+          cd sdk
+          git clone https://github.com/FUjr/QModem.git package/luci-app-qmodem
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Compile QModem APK
+        run: |
+          cd sdk
+          make defconfig
+          make package/luci-app-qmodem/compile V=s -j$(nproc)
+
+      - name: Organize Artifacts
+        run: |
+          mkdir -p output
+          # Mengambil paket .apk hasil build
+          find sdk/bin/ -type f -name "*.apk" -exec cp {} output/ \;
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-qmodem-openwrt-25.12-mt7621
+          path: output/

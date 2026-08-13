@@ -9,8 +9,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4.2.2
-        with:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Install Build Dependencies
         run: |
@@ -20,13 +18,14 @@ jobs:
 
       - name: Download OpenWrt 25.12 SDK (ramips/mt7621)
         run: |
-          wget -q https://downloads.openwrt.org/releases/25.12.0/targets/ramips/mt7621/openwrt-sdk-25.12.0-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.xz
+          wget -q https://downloads.openwrt.org/releases/25.12.0/targets/ramips/mt7621/openwrt-sdk-25.12.0-ramips-mt7621_gcc-14.3.0_musl.Linux-x86_64.tar.zst
           tar -xvf openwrt-sdk-*.tar.xz
           rm openwrt-sdk-*.tar.xz
           mv openwrt-sdk-* sdk
 
       - name: Build QModem Package
         run: |
+          # Copy source code ke folder package SDK
           mkdir -p sdk/package/luci-app-qmodem
           cp -r application/qmodem/* sdk/package/luci-app-qmodem/
           

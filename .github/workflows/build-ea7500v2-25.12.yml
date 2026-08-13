@@ -19,8 +19,8 @@ jobs:
       - name: Download OpenWrt 25.12 SDK (ramips/mt7621)
         run: |
           wget -q https://downloads.openwrt.org/releases/25.12.0/targets/ramips/mt7621/openwrt-sdk-25.12.0-ramips-mt7621_gcc-14.3.0_musl.Linux-x86_64.tar.zst
-          tar -xvf openwrt-sdk-*.tar.xz
-          rm openwrt-sdk-*.tar.xz
+          tar --zstd -xvf openwrt-sdk-*.tar.zst
+          rm openwrt-sdk-*.tar.zst
           mv openwrt-sdk-* sdk
 
       - name: Build QModem Package

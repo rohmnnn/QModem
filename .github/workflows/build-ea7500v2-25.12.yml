@@ -5,6 +5,7 @@ on:
 
 env:
   TZ: Asia/Jakarta
+  # Release 25.12.0 (bisa diganti 25.12.5 nanti)
   SDK_NAME: openwrt-sdk-25.12.0-ramips-mt7621_gcc-14.3.0_musl.Linux-x86_64
   SDK_EXT: tar.zst
   SDK_URL: https://downloads.openwrt.org/releases/25.12.0/targets/ramips/mt7621/
@@ -28,16 +29,18 @@ jobs:
         with:
           path: 'qmodem'
 
-      - name: Download & prepare OpenWrt 25.12 SDK
+      - name: Initialization environment
         run: |
+          set -e
           file_name="${SDK_NAME}.${SDK_EXT}"
           wget -q "${SDK_URL}${file_name}"
-          mkdir sdk
+          mkdir -p sdk
           tar --zstd -xvf "$file_name" -C ./sdk --strip-components=1
           rm -f "$file_name"
 
           cd sdk
-          # Setup official feeds
+
+          # Sama pola main.yml, tapi branch 25.12 biar cocok release
           echo "src-git base https://github.com/openwrt/openwrt.git;openwrt-25.12" > feeds.conf
           echo "src-git packages https://github.com/openwrt/packages.git;openwrt-25.12" >> feeds.conf
           echo "src-git luci https://github.com/openwrt/luci.git;openwrt-25.12" >> feeds.conf
@@ -46,55 +49,77 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-          # Link seluruh repo QModem sebagai feed (ini yang paling penting!)
-          echo "src-link qmodem $(pwd)/../qmodem" >> feeds.conf
+          cd ..
+          echo "src-link qmodem $(pwd)/qmodem" >> sdk/feeds.conf
+          cd sdk
           ./scripts/feeds update qmodem
           ./scripts/feeds install -a -p qmodem
 
-          # Config dasar
           echo "CONFIG_ALL_NONSHARED=n" > .config
           echo "CONFIG_ALL_KMODS=n" >> .config
           echo "CONFIG_ALL=n" >> .config
           echo "CONFIG_AUTOREMOVE=n" >> .config
           echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
-          # Ambil config package dari repo
           cat ../qmodem/.github/workflows/openwrt_package.config >> .config
 
           make defconfig
           make download -j$(nproc) || true
 
-      - name: Compile QModem packages
+      - name: Compile QModem
+        id: compile
         run: |
+          set -e
           cd sdk
           ./scripts/feeds update qmodem
           ./scripts/feeds install -a -p qmodem
 
-          generic_package=$(cat ../qmodem/.github/workflows/qmodem_package_generic)
-          arch_package=$(cat ../qmodem/.github/workflows/qmodem_package_arch)
-
-          for package in $generic_package; do
-            echo "=== Compiling $package ==="
-            make package/$package/compile -j$(nproc) V=s || true
+          # Nama package yang BENAR (dari Makefile)
+          # Urutan: dependency dulu
+          for package in \
+            tom_modem \
+            ubus-at-daemon \
+            sms-tool_q \
+            modem_scan \
+            quectel-CM-5G-M \
+            qmodem \
+            luci-app-qmodem \
+            luci-app-qmodem-next \
+            luci-app-qmodem-sms
+          do
+            echo "===== Compiling $package ====="
+            # Tetap lanjut kalau 1 package gagal, tapi log jelas
+            make package/$package/compile -j$(nproc) V=s || echo "FAILED: $package"
           done
 
-          for package in $arch_package; do
-            echo "=== Compiling $package ==="
-            make package/$package/compile -j$(nproc) V=s || true
-          done
+          echo "===== Hasil di bin/packages ====="
+          find bin/packages -type d -name "qmodem" -o -type d -name "base" | head -20
+          find bin/packages -type f \( -name "*.ipk" -o -name "*.apk" \) | head -50
 
-          echo "=== Hasil package ==="
-          ls -la bin/packages/${SDK_ARCH}/qmodem/ || ls -la bin/packages/*/qmodem/ || true
+          # Path resmi main.yml
+          if [ -d "bin/packages/${SDK_ARCH}/qmodem" ]; then
+            echo "FIRMWARE=$(pwd)/bin/packages/${SDK_ARCH}/qmodem/" >> "$GITHUB_ENV"
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            # fallback: kumpulkan semua package QModem di mana pun
+            mkdir -p /tmp/qmodem-out
+            find bin/packages -type f \( -name "*qmodem*" -o -name "*tom_modem*" -o -name "*ubus-at-daemon*" -o -name "*quectel*" -o -name "*sms-tool*" -o -name "*modem_scan*" \) \
+              \( -name "*.ipk" -o -name "*.apk" \) -exec cp -v {} /tmp/qmodem-out/ \;
+            count=$(find /tmp/qmodem-out -type f | wc -l)
+            if [ "$count" -gt 0 ]; then
+              echo "FIRMWARE=/tmp/qmodem-out/" >> "$GITHUB_ENV"
+              echo "status=success" >> "$GITHUB_OUTPUT"
+            else
+              echo "status=failed" >> "$GITHUB_OUTPUT"
+              echo "Tidak ada artifact. Cek log FAILED di atas."
+              exit 1
+            fi
+          fi
 
-      - name: Organize Artifacts
-        run: |
-          mkdir -p output
-          # Cari semua .ipk / .apk hasil build
-          find sdk/bin/packages -type f \( -name ".ipk" -o -name ".apk" \) -exec cp -v {} output/ \;
-          ls -la output/
-
-      - name: Upload Artifact
+      - name: Upload QModem
+        if: steps.compile.outputs.status == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: QModem-Linksys-EA7500v2-25.12
-          path: output/
+          path: ${{ env.FIRMWARE }}
+          if-no-files-found: error
           retention-days: 14

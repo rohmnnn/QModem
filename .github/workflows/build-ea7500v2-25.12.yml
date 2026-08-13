@@ -9,6 +9,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4.2.2
+        with:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Install Build Dependencies
         run: |
@@ -25,7 +27,6 @@ jobs:
 
       - name: Build QModem Package
         run: |
-          # Copy source code ke folder package SDK
           mkdir -p sdk/package/luci-app-qmodem
           cp -r application/qmodem/* sdk/package/luci-app-qmodem/
           
